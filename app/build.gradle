@@ -55,6 +55,15 @@ android {
     }
     buildFeatures {
         buildConfig true
+        compose true
+    }
+
+    // The checked-in assets/novnc entries are symlinks. Directory symlinks are not
+    // reliably checked out on Windows; use generated real files on every platform.
+    sourceSets {
+        main {
+            assets.setSrcDirs([])
+        }
     }
 }
 
@@ -135,9 +144,46 @@ def generateKeysyms = tasks.register('generateKeysyms', GenerateKeysyms) {
     keysymHeader.set(rootProject.file('libvncserver/include/rfb/keysym.h'))
 }
 
+abstract class GenerateNoVncAssets extends DefaultTask {
+    @InputDirectory
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract DirectoryProperty getSourceDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @javax.inject.Inject
+    abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
+
+    @TaskAction
+    void generate() {
+        def source = sourceDir.get().asFile
+        // Fail instead of producing an APK containing only the HTML shell.
+        ['vnc.html', 'app/ui.js', 'app/error-handler.js', 'app/styles/base.css',
+         'app/images/info.svg', 'core/rfb.js', 'vendor/pako/lib/zlib/inflate.js'].each { path ->
+            if (!new File(source, path).isFile()) {
+                throw new GradleException("Missing noVNC asset: ${path}. Initialize the noVNC submodule with git submodule update --init --recursive.")
+            }
+        }
+        fileSystemOperations.sync {
+            from(source) {
+                include 'vnc.html', 'app/**', 'core/**', 'vendor/**'
+                into 'novnc'
+            }
+            into(outputDir.get().asFile)
+        }
+    }
+}
+
+def generateNoVncAssets = tasks.register('generateNoVncAssets', GenerateNoVncAssets) {
+    sourceDir.set(rootProject.layout.projectDirectory.dir('noVNC'))
+    outputDir.set(layout.buildDirectory.dir('generated/assets/noVnc'))
+}
+
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.sources.kotlin.addGeneratedSourceDirectory(generateKeysyms) { it.getOutputDir() }
+        variant.sources.assets.addGeneratedSourceDirectory(generateNoVncAssets) { it.getOutputDir() }
     }
 }
 
