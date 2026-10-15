@@ -21,7 +21,7 @@ object Utils {
 
     /** Browser access link used by both sharing and Web Proxy Service publication. */
     fun browserAccessUrl(host: String, port: Int): String =
-        "http://$host:${port - 100}/vnc.html?autoconnect=true&show_dot=true&host=$host&port=$port"
+        "http://$host:${port - 100}/vnc.html?autoconnect=true&show_dot=true&host=$host&port=$port&resize=scale"
 
     /** For addresses returned by MainService.getIPv4s(), exclude loopback and wildcard. */
     fun isShareableIPv4(host: String): Boolean =
