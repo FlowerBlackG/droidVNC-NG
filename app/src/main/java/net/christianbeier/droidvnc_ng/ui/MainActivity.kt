@@ -24,6 +24,7 @@ import net.christianbeier.droidvnc_ng.Defaults
 import net.christianbeier.droidvnc_ng.InputService
 import net.christianbeier.droidvnc_ng.MainService
 import net.christianbeier.droidvnc_ng.R
+import net.christianbeier.droidvnc_ng.Utils
 import net.christianbeier.droidvnc_ng.capture.mediaprojection.MediaProjectionRequestActivity
 import net.christianbeier.droidvnc_ng.capture.mediaprojection.MediaProjectionService
 import net.christianbeier.droidvnc_ng.input.InputRequestActivity
@@ -192,7 +193,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshNetwork() {
         if (isDestroyed) return
         hosts = if (running) MainService.getIPv4s().let { addresses ->
-            if (addresses.size > 1) addresses.filter { it != "127.0.0.1" } else addresses.toList()
+            if (addresses.size > 1) addresses.filter(Utils::isShareableIPv4) else addresses.toList()
         } else emptyList()
         if (!running) {
             val loopback = runCatching { NetworkInterface.getNetworkInterfaces().toList().filter { it.isLoopback }.map { it.name } }.getOrDefault(emptyList())
@@ -251,7 +252,7 @@ class MainActivity : ComponentActivity() {
     internal fun notificationSettings() = startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
     internal fun share(host: String) {
         val port = MainService.getPort()
-        val url = "http://$host:${port - 100}/vnc.html?autoconnect=true&show_dot=true&host=$host&port=$port"
+        val url = Utils.browserAccessUrl(host, port)
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), null))
     }
     internal fun openWeb(url: String, title: String) {

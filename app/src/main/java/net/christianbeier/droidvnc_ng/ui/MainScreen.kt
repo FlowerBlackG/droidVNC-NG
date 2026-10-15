@@ -101,6 +101,7 @@ internal fun MainScreen(activity: MainActivity) {
                     }
                 } else {
                     item(key = "network") { NetworkSettings(activity, revision) }
+                    item(key = "web_proxy") { WebProxySettings(activity) }
                     item(key = "display") { DisplaySettings(activity, revision) }
                     item(key = "boot") { BootSettings(activity, revision) }
                 }
@@ -136,7 +137,7 @@ private fun ServerCard(activity: MainActivity) {
                 if (MainService.getPort() < 0) Text(stringResource(R.string.main_activity_not_listening))
                 else activity.hosts.forEach { host ->
                     SelectionContainer { Text(formatEndpoint(host, MainService.getPort()), style = MaterialTheme.typography.titleMedium) }
-                    if (host != "127.0.0.1") TextButton(onClick = { activity.share(host) }) { Text(stringResource(R.string.main_activity_share_link)) }
+                    if (Utils.isShareableIPv4(host)) TextButton(onClick = { activity.share(host) }) { Text(stringResource(R.string.main_activity_share_link)) }
                 }
             }
             Button(onClick = activity::toggleServer, enabled = !activity.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
@@ -179,6 +180,25 @@ private fun NetworkSettings(activity: MainActivity, revision: Int) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         SecretPreference(activity, Constants.PREFS_KEY_SETTINGS_PASSWORD, defaults.password, R.string.main_activity_settings_password, enabled)
         SecretPreference(activity, Constants.PREFS_KEY_SETTINGS_ACCESS_KEY, defaults.accessKey, R.string.main_activity_settings_access_key, enabled, resetEmpty = true)
+    }
+}
+
+@Composable
+private fun WebProxySettings(activity: MainActivity) {
+    val enabled = !activity.running && !activity.busy
+    var endpoint by rememberSaveable {
+        mutableStateOf(activity.prefs.getString(Constants.PREFS_KEY_SETTINGS_WEB_PROXY_ENDPOINT, "").orEmpty())
+    }
+    SettingsCard(stringResource(R.string.ui_web_proxy_service)) {
+        Text(stringResource(R.string.ui_web_proxy_hint), style = MaterialTheme.typography.bodyMedium)
+        OutlinedTextField(value = endpoint, onValueChange = {
+            endpoint = it
+            activity.prefs.edit().putString(Constants.PREFS_KEY_SETTINGS_WEB_PROXY_ENDPOINT, it.trim()).apply()
+        }, label = { Text(stringResource(R.string.ui_web_proxy_endpoint)) },
+            placeholder = { Text("https://www.yourweb.com/vnc/main.php") },
+            enabled = enabled, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
+        SecretPreference(activity, Constants.PREFS_KEY_SETTINGS_WEB_PROXY_PASSWORD, "", R.string.ui_web_proxy_password, enabled)
     }
 }
 

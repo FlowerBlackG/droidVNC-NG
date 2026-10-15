@@ -28,6 +28,8 @@ public class Constants {
     public static final String PREFS_KEY_SETTINGS_INTERFACE = "settings_interface";
     public static final String PREFS_KEY_SETTINGS_PORT = "settings_port";
     public static final String PREFS_KEY_SETTINGS_PASSWORD = "settings_password" ;
+    public static final String PREFS_KEY_SETTINGS_WEB_PROXY_ENDPOINT = "settings_web_proxy_endpoint";
+    public static final String PREFS_KEY_SETTINGS_WEB_PROXY_PASSWORD = "settings_web_proxy_password";
     public static final String PREFS_KEY_SETTINGS_START_ON_BOOT = "settings_start_on_boot" ;
     public static final String PREFS_KEY_SETTINGS_START_ON_BOOT_DELAY = "settings_start_on_boot_delay" ;
     public static final String PREFS_KEY_SETTINGS_SCALING = "settings_scaling" ;

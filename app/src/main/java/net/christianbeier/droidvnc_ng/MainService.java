@@ -517,6 +517,7 @@ public class MainService extends Service {
                     startScreenCapture();
                     registerNSD(name, port);
                     updateNotification(true);
+                    WebProxyService.publish(this);
                     // if we got here, we want to restart if we were killed
                     return START_STICKY;
                 } else {
@@ -567,6 +568,7 @@ public class MainService extends Service {
                     startScreenCapture();
                     registerNSD(name, port);
                     updateNotification(true);
+                    WebProxyService.publish(this);
                     // if we got here, we want to restart if we were killed
                     return START_STICKY;
                 } else {

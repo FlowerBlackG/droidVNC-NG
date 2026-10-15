@@ -8,6 +8,11 @@
     <string name="ui_no_clients">No viewers connected yet.</string>
     <string name="ui_disconnect">Disconnect</string>
     <string name="ui_network_security">Network &amp; security</string>
+    <string name="ui_web_proxy_service">Web Proxy Service</string>
+    <string name="ui_web_proxy_endpoint">Endpoint URL</string>
+    <string name="ui_web_proxy_password">Web Proxy Service password</string>
+    <string name="ui_web_proxy_hint">Publish the first available LAN browser link when VNC starts. Use the password configured in the PHP service. Leave the endpoint empty to disable. Changes are saved automatically.</string>
+    <string name="ui_web_proxy_failed">Web Proxy Service update failed. Check the endpoint, password, and network connection.</string>
     <string name="ui_display_input">Display &amp; input</string>
     <string name="ui_automation">Automation</string>
     <string name="ui_settings_locked">Stop the server to change connection and display settings.</string>
