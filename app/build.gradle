@@ -9,8 +9,8 @@ android {
 
     defaultConfig {
         applicationId "net.christianbeier.droidvnc_ng"
-        minSdk 24
-        targetSdk 36
+        minSdk 36
+        targetSdk 37
         versionCode 65
         versionName "2.22.0"
 
@@ -46,11 +46,11 @@ android {
     namespace 'net.christianbeier.droidvnc_ng'
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '11'
+        jvmTarget = '17'
     }
     buildFeatures {
         buildConfig true
