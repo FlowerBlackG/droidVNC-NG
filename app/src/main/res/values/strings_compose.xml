@@ -1,0 +1,25 @@
+<resources>
+    <string name="ui_dashboard">Dashboard</string>
+    <string name="ui_server_running">Server running</string>
+    <string name="ui_server_stopped">Ready to connect</string>
+    <string name="ui_running_hint">Manage your connections and share access to this device.</string>
+    <string name="ui_stopped_hint">Start the server to share your screen with a VNC viewer.</string>
+    <string name="ui_please_wait">Please wait…</string>
+    <string name="ui_no_clients">No viewers connected yet.</string>
+    <string name="ui_disconnect">Disconnect</string>
+    <string name="ui_network_security">Network &amp; security</string>
+    <string name="ui_display_input">Display &amp; input</string>
+    <string name="ui_automation">Automation</string>
+    <string name="ui_settings_locked">Stop the server to change connection and display settings.</string>
+    <string name="ui_port_hint">Leave empty to disable inbound connections.</string>
+    <string name="ui_invalid_port">Enter a port from 0 to 65535.</string>
+    <string name="ui_show">Show</string>
+    <string name="ui_hide">Hide</string>
+    <string name="ui_about">About</string>
+    <string name="ui_releases">Release notes</string>
+    <string name="ui_report_issue">Report an issue</string>
+    <string name="ui_back">Back</string>
+    <string name="ui_dismiss">Dismiss</string>
+    <string name="ui_shortcuts_hint">Choose a trigger key and optional modifiers for each action. Changes are saved automatically and applied to remote input immediately.</string>
+    <string name="ui_trigger_key">Key: %1$s</string>
+</resources>

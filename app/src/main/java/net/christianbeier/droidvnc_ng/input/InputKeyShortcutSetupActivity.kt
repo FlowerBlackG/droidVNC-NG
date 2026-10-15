@@ -1,266 +1,130 @@
-/*
- * DroidVNC-NG configurable keyboard shortcuts.
- *
- * Author is slab-tsuchiya <https://github.com/slab-tsuchiya>.
- *
- * You can redistribute and/or modify this program under the terms of the
- * GNU General Public License version 2 as published by the Free Software
- * Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
- * Public License for more details.
+/* DroidVNC-NG configurable keyboard shortcuts.
+ * Original author: slab-tsuchiya <https://github.com/slab-tsuchiya>.
+ * SPDX-License-Identifier: GPL-2.0-only
  */
-
 package net.christianbeier.droidvnc_ng.input
 
-import android.graphics.Typeface
-import android.os.Build
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.CheckBox
-import android.widget.CompoundButton
-import android.widget.LinearLayout
-import android.widget.Spinner
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.preference.PreferenceManager
 import net.christianbeier.droidvnc_ng.Defaults
 import net.christianbeier.droidvnc_ng.InputService
 import net.christianbeier.droidvnc_ng.R
 import net.christianbeier.droidvnc_ng.Utils
+import net.christianbeier.droidvnc_ng.ui.SettingsCard
+import net.christianbeier.droidvnc_ng.ui.BackNavigationButton
+import net.christianbeier.droidvnc_ng.ui.VncTheme
+import net.christianbeier.droidvnc_ng.ui.chordLabel
 
-/**
- * Full-screen settings screen for the configurable keyboard shortcuts (issue #13). It inflates one
- * row per [InputKeyShortcut.Action] -- three modifier checkboxes (Ctrl/Alt/Shift) plus a trigger-key
- * [Spinner] -- and owns their whole lifecycle: loading the persisted chords, offering the
- * [InputKeyShortcut.TriggerKey] entries and their localized labels, rejecting a chord already assigned to another action, persisting a change and live-updating
- * the running [net.christianbeier.droidvnc_ng.InputService]. It iterates the [InputKeyShortcut.Action] constants rather than listing
- * the actions here, so the caller only has to start it.
- */
-class InputKeyShortcutSetupActivity : AppCompatActivity() {
-
-    /** Runtime state for one action row: its action, resolved controls and last-good chord. */
-    private class Row(
-        val action: InputKeyShortcut.Action,
-        val ctrl: CheckBox,
-        val alt: CheckBox,
-        val shift: CheckBox,
-        val key: Spinner,
-    ) {
-        /** Last-good canonical chord string ("" when unassigned); the revert target on a conflict. */
-        var selected: String = ""
-
-        /** Keysym for each key-spinner position, parallel to its adapter (a trailing custom entry
-         *  is appended when the bound chord uses a key outside the curated list). */
-        var keysyms: List<Long> = emptyList()
+class InputKeyShortcutSetupActivity : ComponentActivity() {
+    private val chords = mutableStateMapOf<InputKeyShortcut.Action, InputKeyShortcut.Chord>()
+    private val actions = InputKeyShortcut.Action.entries.filter {
+        it != InputKeyShortcut.Action.ROTATE || Utils.hasPortraitInLandscapeQuirk()
     }
-
-    private val rows = ArrayList<Row>(InputKeyShortcut.Action.entries.size)
-
-    /** True while programmatically setting control state, so the change listeners stay quiet. */
-    private var updating = false
+    private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
+    private val defaults by lazy { Defaults(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // On Android 15 and later, calling enableEdgeToEdge ensures system bar icon colors update
-        // when the device theme changes. Because calling it on pre-Android 15 has the side effect of
-        // enabling EdgeToEdge there as well, we only use it on Android 15 and later.
-        if (Build.VERSION.SDK_INT >= 35) {
-            this.enableEdgeToEdge()
-        }
-        setContentView(R.layout.activity_key_shortcut_setup)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        findViewById<Button>(R.id.key_shortcut_restore_defaults).setOnClickListener {
-            // ask first: this discards every chord the user set, and there is no undo
-            AlertDialog.Builder(this)
-                .setMessage(R.string.main_activity_settings_key_shortcuts_restore_confirm)
-                .setPositiveButton(R.string.main_activity_settings_key_shortcuts_restore) { _, _ -> restoreDefaults() }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-        }
-        setupRows()
+        enableEdgeToEdge()
+        loadChords()
+        setContent { VncTheme { ShortcutScreen() } }
     }
 
-    /**
-     * Drops every persisted chord so each action falls back to its default -- which is whatever
-     * defaults.json / managed config sets, not necessarily the built-in chord -- then rebuilds the
-     * rows from that.
-     */
-    private fun restoreDefaults() {
-        val editor = PreferenceManager.getDefaultSharedPreferences(this).edit()
-        for (action in InputKeyShortcut.Action.entries) {
-            editor.remove(action.prefKey)
-        }
-        editor.apply()
-        findViewById<LinearLayout>(R.id.key_shortcut_rows).removeAllViews()
-        rows.clear()
-        setupRows()
-        // live-reload the running input service from prefs (a no-op when it is not connected)
-        InputService.reloadShortcuts()
+    private fun loadChords() {
+        actions.forEach { action -> chords[action] = InputKeyShortcut.Chord.fromString(prefs.getString(action.prefKey, action.defaultChord(defaults))) }
     }
 
-    private fun setupRows() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val defaults = Defaults(this)
-        val container = findViewById<LinearLayout>(R.id.key_shortcut_rows)
-        /*
-            Keep the framework from saving and restoring the rows' view state across a configuration
-            change. The inflated rows all carry the same ids, and view state is saved per id, so one
-            row's checkboxes and spinner would be restored onto every row -- which then reads as a
-            pile of duplicate chords and toasts. There is nothing to restore anyway: every change is
-            persisted as it is made and the rows are rebuilt from prefs right here.
-         */
-        container.isSaveFromParentEnabled = false
-        val inflater = layoutInflater
-
-        // inflate a row per action and set its initial state with the listeners still detached
-        updating = true
-        for (action in InputKeyShortcut.Action.entries) {
-            // ROTATE toggles the portrait-in-landscape workaround, which only produces a usable
-            // picture on the quirky hardware it exists for -- InputService keeps it unassigned on
-            // everything else, so offer no row for it there either
-            if (action == InputKeyShortcut.Action.ROTATE && !Utils.hasPortraitInLandscapeQuirk()) {
-                continue
-            }
-            val view = inflater.inflate(R.layout.key_shortcut_row, container, false)
-            view.findViewById<TextView>(R.id.key_shortcut_label).setText(action.labelRes)
-            val row = Row(
-                action,
-                view.findViewById(R.id.key_shortcut_ctrl),
-                view.findViewById(R.id.key_shortcut_alt),
-                view.findViewById(R.id.key_shortcut_shift),
-                view.findViewById(R.id.key_shortcut_key),
-            )
-            val chord = InputKeyShortcut.Chord.fromString(prefs.getString(action.prefKey, action.defaultChord(defaults)))
-            bindKeyChoices(row, chord.keysym)
-            row.selected = chord.toString()
-            applyChord(row, chord)
-            container.addView(view)
-            rows.add(row)
+    private fun update(action: InputKeyShortcut.Action, chord: InputKeyShortcut.Chord) {
+        val proposed = InputKeyShortcut.Manager.from { other ->
+            (if (other == action) chord else chords[other])?.toString().orEmpty()
         }
-        updating = false
-
-        // attach the change listeners now that the initial state is in place
-        for (i in rows.indices) {
-            val row = rows[i]
-            val onChecked = CompoundButton.OnCheckedChangeListener { button, checked ->
-                button.setTypeface(null, if (checked) Typeface.BOLD else Typeface.NORMAL)
-                onChordChanged(i)
-            }
-            row.ctrl.setOnCheckedChangeListener(onChecked)
-            row.alt.setOnCheckedChangeListener(onChecked)
-            row.shift.setOnCheckedChangeListener(onChecked)
-            row.key.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) =
-                    onChordChanged(i)
-
-                override fun onNothingSelected(parent: AdapterView<*>?) {}
-            }
-        }
-    }
-
-    /**
-     * Populates a row's key spinner with "None" and the curated [InputKeyShortcut.TriggerKey] entries
-     * and, when [keysym] is an assigned key outside that set (e.g. a key bound through defaults.json
-     * or managed config), a trailing entry labelled with that key's own XK name -- so it stays
-     * visible and editable instead of collapsing to "None". [Row.keysyms] mirrors the resulting
-     * adapter positions for read-back.
-     */
-    private fun bindKeyChoices(row: Row, keysym: Long) {
-        val keys = InputKeyShortcut.TriggerKey.entries
-        val labels = ArrayList<String>(keys.size + 2)
-        val keysyms = ArrayList<Long>(keys.size + 2)
-        labels.add(getString(R.string.key_label_none))
-        keysyms.add(0L)
-        for (key in keys) {
-            labels.add(getString(key.labelRes))
-            keysyms.add(key.keysym)
-        }
-        if (keysym != 0L && InputKeyShortcut.TriggerKey.of(keysym) == null) {
-            labels.add(InputKeysyms.nameOf(keysym) ?: "0x" + keysym.toString(16))
-            keysyms.add(keysym)
-        }
-        val adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, labels) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = super.getView(position, convertView, parent)
-                // an assigned key reads bold, like a ticked modifier's label; "None" stays regular.
-                // Set both ways round because the spinner recycles this view.
-                (view as TextView).setTypeface(
-                    null, if (keysyms[position] == 0L) Typeface.NORMAL else Typeface.BOLD
-                )
-                return view
-            }
-        }
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        row.key.adapter = adapter
-        row.keysyms = keysyms
-    }
-
-    /** Sets a row's modifier checkboxes and key spinner from a parsed chord. Mute listeners first. */
-    private fun applyChord(row: Row, chord: InputKeyShortcut.Chord) {
-        row.ctrl.isChecked = chord.ctrl
-        row.alt.isChecked = chord.alt
-        row.shift.isChecked = chord.shift
-        // bold-marks a modifier as part of the chord, like the spinner marks an assigned key
-        for (box in listOf(row.ctrl, row.alt, row.shift)) {
-            box.setTypeface(null, if (box.isChecked) Typeface.BOLD else Typeface.NORMAL)
-        }
-        row.key.setSelection(row.keysyms.indexOf(chord.keysym).coerceAtLeast(0))
-    }
-
-    /** Reads a row's controls into a [InputKeyShortcut.Chord]. */
-    private fun readChord(row: Row): InputKeyShortcut.Chord =
-        InputKeyShortcut.Chord(row.ctrl.isChecked, row.alt.isChecked, row.shift.isChecked,
-            row.keysyms[row.key.selectedItemPosition])
-
-    /**
-     * Handles a change on row [idx]: recompose the chord; if it duplicates another action's assigned
-     * chord, toast and revert; otherwise persist it and live-reload the running [InputService].
-     */
-    private fun onChordChanged(idx: Int) {
-        if (updating) {
+        if (chord.isAssigned && chord in proposed.conflicts) {
+            Toast.makeText(this, getString(R.string.main_activity_settings_chord_conflict, chord.toString()), Toast.LENGTH_SHORT).show()
             return
         }
-        val row = rows[idx]
-        val chord = readChord(row)
-        val value = chord.toString()
-        if (value == row.selected) {
-            return // no actual change (e.g. a re-layout or unchanged re-selection callback)
-        }
-        // Reject an assigned chord another action already uses: rebuild the manager over the proposed
-        // assignment (this row's new value, the rest as-is) and let it flag the duplicate.
-        if (chord.isAssigned) {
-            // An action that does not apply to this device gets no row, so look its chord up by
-            // action; firstOrNull yields null if 'a' could not be found.
-            val proposed = InputKeyShortcut.Manager.from { a ->
-                if (a == row.action) value else rows.firstOrNull { it.action == a }?.selected ?: ""
-            }
-            if (chord in proposed.conflicts) {
-                Toast.makeText(
-                    this,
-                    getString(R.string.main_activity_settings_chord_conflict, value),
-                    Toast.LENGTH_SHORT
-                ).show()
-                updating = true
-                applyChord(row, InputKeyShortcut.Chord.fromString(row.selected)) // revert to last good
-                updating = false
-                return
-            }
-        }
-        row.selected = value
-        PreferenceManager.getDefaultSharedPreferences(this)
-            .edit().putString(row.action.prefKey, value).apply()
-        // live-reload the running input service from prefs (a no-op when it is not connected)
+        // Keep in-progress modifier choices even when no trigger is selected yet.
+        chords[action] = chord
+        prefs.edit().putString(action.prefKey, chord.toString()).apply()
         InputService.reloadShortcuts()
     }
 
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+    @Composable
+    private fun ShortcutScreen() {
+        var restore by rememberSaveable { mutableStateOf(false) }
+        Scaffold(topBar = {
+            TopAppBar(title = { Text(stringResource(R.string.main_activity_settings_key_shortcuts)) }, navigationIcon = {
+                BackNavigationButton(onClick = { finish() })
+            })
+        }) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                LazyColumn(Modifier.widthIn(max = 840.dp).fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    item {
+                        Text(stringResource(R.string.ui_shortcuts_hint), style = MaterialTheme.typography.bodyLarge)
+                    }
+                    items(actions, key = { it.name }) { action ->
+                        val chord = chords.getValue(action)
+                        SettingsCard(stringResource(action.labelRes)) {
+                            Text(chordLabel(chord), style = MaterialTheme.typography.titleLarge)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(chord.ctrl, { update(action, chord.copy(ctrl = !chord.ctrl)) }, label = { Text(stringResource(R.string.key_modifier_ctrl)) })
+                                FilterChip(chord.alt, { update(action, chord.copy(alt = !chord.alt)) }, label = { Text(stringResource(R.string.key_modifier_alt)) })
+                                FilterChip(chord.shift, { update(action, chord.copy(shift = !chord.shift)) }, label = { Text(stringResource(R.string.key_modifier_shift)) })
+                            }
+                            var expanded by remember { mutableStateOf(false) }
+                            val keys = buildList {
+                                add(0L)
+                                addAll(InputKeyShortcut.TriggerKey.entries.map { it.keysym })
+                                if (chord.keysym !in this) add(chord.keysym)
+                            }
+                            Box {
+                                OutlinedButton(onClick = { expanded = true }) {
+                                    Text(stringResource(R.string.ui_trigger_key, keyLabel(chord.keysym)))
+                                }
+                                DropdownMenu(expanded, { expanded = false }, modifier = Modifier.heightIn(max = 360.dp)) {
+                                    keys.forEach { keysym ->
+                                        DropdownMenuItem(text = { Text(keyLabel(keysym)) }, onClick = {
+                                            update(action, chord.copy(keysym = keysym)); expanded = false
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        OutlinedButton(onClick = { restore = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.main_activity_settings_key_shortcuts_restore))
+                        }
+                    }
+                }
+            }
+        }
+        if (restore) AlertDialog(onDismissRequest = { restore = false },
+            text = { Text(stringResource(R.string.main_activity_settings_key_shortcuts_restore_confirm)) },
+            confirmButton = { TextButton(onClick = {
+                prefs.edit().apply { InputKeyShortcut.Action.entries.forEach { remove(it.prefKey) } }.apply()
+                loadChords()
+                InputService.reloadShortcuts()
+                restore = false
+            }) { Text(stringResource(R.string.main_activity_settings_key_shortcuts_restore)) } },
+            dismissButton = { TextButton(onClick = { restore = false }) { Text(stringResource(android.R.string.cancel)) } })
+    }
+
+    @Composable
+    private fun keyLabel(keysym: Long): String = if (keysym == 0L) stringResource(R.string.key_label_none)
+        else InputKeyShortcut.TriggerKey.of(keysym)?.let { stringResource(it.labelRes) } ?: InputKeysyms.nameOf(keysym) ?: "0x${keysym.toString(16)}"
 }

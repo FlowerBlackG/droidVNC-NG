@@ -1,65 +1,87 @@
 package net.christianbeier.droidvnc_ng.ui
 
 import android.annotation.SuppressLint
-import android.os.Build
+import android.graphics.Bitmap
 import android.os.Bundle
-import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.ProgressBar
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
 import net.christianbeier.droidvnc_ng.R
 
-/*
-    Using a WebView activity here since Android TVs usually do not have a browser preinstalled.
-    In contrast to a WebView dialog this retains state on device rotation etc.
- */
-class WebViewActivity : AppCompatActivity() {
+/** Embedded browsing is retained for TVs without a browser. Compose owns the screen chrome. */
+class WebViewActivity : ComponentActivity() {
     private lateinit var webView: WebView
-    private lateinit var progressBar: ProgressBar
+    private var loading by mutableStateOf(true)
+    private var canGoBack by mutableStateOf(false)
 
     companion object {
         const val EXTRA_URL = "url"
         const val EXTRA_TITLE = "title"
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // On Android 15 and later, calling enableEdgeToEdge ensures system bar icon colors update
-        // when the device theme changes. Because calling it on pre-Android 15 has the side effect of
-        // enabling EdgeToEdge there as well, we only use it on Android 15 and later.
-        if (Build.VERSION.SDK_INT >= 35) {
-            this.enableEdgeToEdge()
-        }
-        setContentView(R.layout.activity_webview)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-
-        progressBar = findViewById(R.id.progress_bar)
-        webView = findViewById(R.id.webview)
-
-        // Get URL and title from intent
-        val url = intent.getStringExtra(EXTRA_URL) ?: run {
-            finish()
-            return
-        }
-
-        // Set title  if provided
-        intent.getStringExtra(EXTRA_TITLE)?.let { title ->
-            setTitle(title)
-        }
-
-        // Set up web view
-        webView.apply {
+        enableEdgeToEdge()
+        val url = intent.getStringExtra(EXTRA_URL) ?: run { finish(); return }
+        webView = WebView(this).apply {
+            settings.javaScriptEnabled = true
             webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    progressBar.visibility = View.GONE
+                override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                    loading = true
+                    canGoBack = view.canGoBack()
+                }
+                override fun onPageFinished(view: WebView, url: String?) {
+                    loading = false
+                    canGoBack = view.canGoBack()
                 }
             }
-            settings.javaScriptEnabled = true
-            loadUrl(url)
+            if (savedInstanceState?.getBundle("webView")?.let { restoreState(it) } == null) loadUrl(url)
+        }
+        setContent {
+            VncTheme {
+                BackHandler(enabled = canGoBack) { webView.goBack() }
+                Scaffold(topBar = {
+                    TopAppBar(title = { Text(intent.getStringExtra(EXTRA_TITLE) ?: getString(R.string.app_name)) }, navigationIcon = {
+                        BackNavigationButton(onClick = { finish() })
+                    })
+                }) { padding ->
+                    Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+                        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+                    }
+                }
+            }
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::webView.isInitialized) outState.putBundle("webView", Bundle().also { webView.saveState(it) })
+    }
+    override fun onPause() {
+        if (::webView.isInitialized) webView.onPause()
+        super.onPause()
+    }
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) webView.onResume()
+    }
+    override fun onDestroy() {
+        if (::webView.isInitialized) {
+            (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+            webView.stopLoading()
+            webView.destroy()
+        }
+        super.onDestroy()
+    }
 }
